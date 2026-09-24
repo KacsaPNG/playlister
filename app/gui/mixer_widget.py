@@ -198,6 +198,17 @@ class MixerWidget(QWidget):
         self.btn_autodj.toggled.connect(self._on_autodj_toggled)
         ag_layout.addWidget(self.btn_autodj)
 
+        # Beatmatching Toggle
+        self.btn_beatmatch = QPushButton("BEATMATCHING: ON")
+        self.btn_beatmatch.setCheckable(True)
+        self.btn_beatmatch.setChecked(getattr(self.engine, "beatmatching_enabled", True))
+        self.btn_beatmatch.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+        self.btn_beatmatch.setStyleSheet(
+            f"QPushButton {{ background-color: #0d2833; color: {DECK_A_COLOR}; border: 1px solid {DECK_A_COLOR}; border-radius: 6px; padding: 6px; }}"
+        )
+        self.btn_beatmatch.toggled.connect(self._on_beatmatch_toggled)
+        ag_layout.addWidget(self.btn_beatmatch)
+
         # Duration setting (5s to 10s)
         dur_row = QHBoxLayout()
         self.label_duration = QLabel("Mix Duration: 7.0 s")
@@ -256,6 +267,19 @@ class MixerWidget(QWidget):
             self.btn_autodj.setText("AUTO-DJ: OFF")
             self.btn_autodj.setStyleSheet(
                 "QPushButton { background-color: #20242e; color: #8b949e; border-radius: 6px; padding: 6px; }"
+            )
+
+    def _on_beatmatch_toggled(self, checked: bool):
+        self.engine.beatmatching_enabled = checked
+        if checked:
+            self.btn_beatmatch.setText("BEATMATCHING: ON")
+            self.btn_beatmatch.setStyleSheet(
+                f"QPushButton {{ background-color: #0d2833; color: {DECK_A_COLOR}; border: 1px solid {DECK_A_COLOR}; border-radius: 6px; padding: 6px; }}"
+            )
+        else:
+            self.btn_beatmatch.setText("BEATMATCHING: OFF (DISABLED)")
+            self.btn_beatmatch.setStyleSheet(
+                "QPushButton { background-color: #20242e; color: #ff4d6d; border: 1px solid #ff3366; border-radius: 6px; padding: 6px; }"
             )
 
     def _on_duration_changed(self, val: int):

@@ -42,6 +42,7 @@ class DualDeckAudioEngine:
         # Crossfader and Queue
         self.crossfader = Crossfader(CrossfadeCurve.EQUAL_POWER)
         self.queue = SmartQueue()
+        self.beatmatching_enabled: bool = True
 
         # Master Limiter
         self.master_limiter = PeakLimiter(sample_rate, threshold_db=-0.5, ceiling_db=-0.1)
@@ -184,11 +185,12 @@ class DualDeckAudioEngine:
         if not (on_beat or force_trigger):
             return False  # Wait for upcoming beat boundary so beats drop together
 
-        # 1. Beatmatch: sync incoming deck tempo to outgoing deck
-        incoming.sync_to_bpm(outgoing.current_bpm)
+        # 1. Beatmatch: sync incoming deck tempo to outgoing deck (if enabled)
+        if self.beatmatching_enabled:
+            incoming.sync_to_bpm(outgoing.current_bpm)
 
         # 2. Phase alignment: ensure incoming beat lands synchronously with outgoing beat
-        if incoming.state == PlaybackState.PLAYING:
+        if self.beatmatching_enabled and incoming.state == PlaybackState.PLAYING:
             inc_spb = 60.0 / max(30.0, incoming.current_bpm)
             inc_phase = incoming.elapsed_seconds % inc_spb
             out_phase = outgoing.elapsed_seconds % spb

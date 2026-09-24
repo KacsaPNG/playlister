@@ -134,3 +134,35 @@ def test_playlist_jump_loading():
 
     assert engine.deck_a.track.metadata.title == "Song 3"
     assert engine.queue.items[2].status == QueueStatus.LOADED_A
+
+
+def test_disable_beatmatching():
+    sr = 44100
+    engine = DualDeckAudioEngine(sample_rate=sr, block_size=1024)
+
+    # Deck A at 120 BPM, Deck B at 135 BPM
+    t_a = make_test_track("Track A", duration_sec=20.0, bpm=120.0, sr=sr)
+    t_b = make_test_track("Track B", duration_sec=20.0, bpm=135.0, sr=sr)
+
+    engine.deck_a.load_track(t_a)
+    engine.deck_b.load_track(t_b)
+    engine.crossfader.position = -1.0  # Deck A active
+
+    engine.deck_a.play()
+    assert engine.deck_a.current_bpm == 120.0
+    assert engine.deck_b.current_bpm == 135.0
+
+    # 1. Disable beatmatching
+    engine.beatmatching_enabled = False
+    assert engine.beatmatching_enabled is False
+
+    engine.crossfader.set_duration(8.0)
+    # Seek on beat to trigger
+    engine.deck_a.seek_seconds(12.5)
+    engine.check_auto_dj()
+
+    assert engine.crossfader.is_transitioning
+    assert engine.deck_b.state == PlaybackState.PLAYING
+    # Beatmatching disabled: Deck B BPM must remain at 135.0, NOT synced to 120.0!
+    assert engine.deck_b.current_bpm == 135.0
+    assert engine.deck_b.pitch_slider == 0.0

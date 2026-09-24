@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QComboBox,
     QFrame,
     QSplitter,
@@ -107,6 +108,17 @@ class MainWindow(QMainWindow):
         self.combo_device.currentIndexChanged.connect(self._on_device_changed)
         top_layout.addWidget(self.combo_device)
 
+        # Beatmatching Toggle Button
+        self.btn_beatmatch_top = QPushButton("BEATMATCH: ON")
+        self.btn_beatmatch_top.setCheckable(True)
+        self.btn_beatmatch_top.setChecked(self.engine.beatmatching_enabled)
+        self.btn_beatmatch_top.setFont(QFont("Arial", 10, QFont.Weight.Bold))
+        self.btn_beatmatch_top.setStyleSheet(
+            f"QPushButton {{ background-color: #0d2833; color: {DECK_A_COLOR}; border: 1px solid {DECK_A_COLOR}; border-radius: 4px; padding: 4px 10px; }}"
+        )
+        self.btn_beatmatch_top.toggled.connect(self._on_top_beatmatch_toggled)
+        top_layout.addWidget(self.btn_beatmatch_top)
+
         # Engine Stats readout
         self.label_sr = QLabel(f"{self.engine.sample_rate} Hz | {self.engine.block_size} spl")
         self.label_sr.setStyleSheet("color: #8b949e; font-size: 11px; font-weight: bold;")
@@ -193,14 +205,43 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.warning(self, "Audio Device Error", f"Failed to switch to selected device:\n{e}")
 
+    def _on_top_beatmatch_toggled(self, checked: bool):
+        self.engine.beatmatching_enabled = checked
+        if checked:
+            self.btn_beatmatch_top.setText("BEATMATCH: ON")
+            self.btn_beatmatch_top.setStyleSheet(
+                f"QPushButton {{ background-color: #0d2833; color: {DECK_A_COLOR}; border: 1px solid {DECK_A_COLOR}; border-radius: 4px; padding: 4px 10px; }}"
+            )
+            self.status_bar.showMessage("Beatmatching enabled.", 2500)
+        else:
+            self.btn_beatmatch_top.setText("BEATMATCH: DISABLED")
+            self.btn_beatmatch_top.setStyleSheet(
+                "QPushButton { background-color: #20242e; color: #ff4d6d; border: 1px solid #ff3366; border-radius: 4px; padding: 4px 10px; }"
+            )
+            self.status_bar.showMessage("Beatmatching disabled.", 2500)
+
+        # Sync mixer widget button if present
+        if hasattr(self, "mixer_widget") and hasattr(self.mixer_widget, "btn_beatmatch"):
+            if self.mixer_widget.btn_beatmatch.isChecked() != checked:
+                self.mixer_widget.btn_beatmatch.blockSignals(True)
+                self.mixer_widget.btn_beatmatch.setChecked(checked)
+                self.mixer_widget._on_beatmatch_toggled(checked)
+                self.mixer_widget.btn_beatmatch.blockSignals(False)
+
     def _sync_deck_a_to_b(self, _):
         """Sync Deck A tempo to Deck B current BPM."""
+        if not self.engine.beatmatching_enabled:
+            self.status_bar.showMessage("Beatmatching is disabled. Enable it to sync.", 3000)
+            return
         target_bpm = self.engine.deck_b.current_bpm
         self.engine.deck_a.sync_to_bpm(target_bpm)
         self.deck_a_widget.slider_pitch.setValue(int(self.engine.deck_a.pitch_slider * 100.0))
 
     def _sync_deck_b_to_a(self, _):
         """Sync Deck B tempo to Deck A current BPM."""
+        if not self.engine.beatmatching_enabled:
+            self.status_bar.showMessage("Beatmatching is disabled. Enable it to sync.", 3000)
+            return
         target_bpm = self.engine.deck_a.current_bpm
         self.engine.deck_b.sync_to_bpm(target_bpm)
         self.deck_b_widget.slider_pitch.setValue(int(self.engine.deck_b.pitch_slider * 100.0))
@@ -217,7 +258,23 @@ class MainWindow(QMainWindow):
         # 3. Update Mixer UI
         self.mixer_widget.update_ui()
 
-        # 4. Update CPU & latency readout
+        # 4. Sync beatmatch top button
+        if hasattr(self, "btn_beatmatch_top") and self.btn_beatmatch_top.isChecked() != self.engine.beatmatching_enabled:
+            self.btn_beatmatch_top.blockSignals(True)
+            self.btn_beatmatch_top.setChecked(self.engine.beatmatching_enabled)
+            if self.engine.beatmatching_enabled:
+                self.btn_beatmatch_top.setText("BEATMATCH: ON")
+                self.btn_beatmatch_top.setStyleSheet(
+                    f"QPushButton {{ background-color: #0d2833; color: {DECK_A_COLOR}; border: 1px solid {DECK_A_COLOR}; border-radius: 4px; padding: 4px 10px; }}"
+                )
+            else:
+                self.btn_beatmatch_top.setText("BEATMATCH: DISABLED")
+                self.btn_beatmatch_top.setStyleSheet(
+                    "QPushButton { background-color: #20242e; color: #ff4d6d; border: 1px solid #ff3366; border-radius: 4px; padding: 4px 10px; }"
+                )
+            self.btn_beatmatch_top.blockSignals(False)
+
+        # 5. Update CPU & latency readout
         cpu = self.engine.dsp_cpu_percent
         cb_dur = self.engine.callback_duration_ms
         self.label_cpu.setText(f"DSP: {cpu:.1f}% ({cb_dur:.2f} ms)")

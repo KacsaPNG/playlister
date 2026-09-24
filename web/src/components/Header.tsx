@@ -38,7 +38,7 @@ export const Header: React.FC<HeaderProps> = ({ isDevMode, onToggleDev, onOpenQr
           {/* Logo */}
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <Disc3 size={20} color="var(--violet)" />
-            <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: "-0.01em" }}>Playlister</span>
+            <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: "-0.01em" }}>ducky's dj app</span>
             {isDevMode && (
               <span
                 style={{

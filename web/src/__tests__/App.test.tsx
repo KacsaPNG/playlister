@@ -14,7 +14,7 @@ describe("Playlister Web Application (Hungarian, No Voting, Standard Guest Defau
 
     render(<App />);
 
-    expect(screen.getByText("Playlister")).toBeDefined();
+    expect(screen.getByText("ducky's dj app")).toBeDefined();
     expect(screen.getByText("Zene beküldése")).toBeDefined();
     expect(screen.getByText("A lejátszási lista jelenleg üres")).toBeDefined();
 
