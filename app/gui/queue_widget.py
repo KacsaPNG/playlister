@@ -143,6 +143,15 @@ class QueueWidget(QWidget):
         self.btn_browse.clicked.connect(self._on_browse_local)
         input_row.addWidget(self.btn_browse)
 
+        # Netlify Web Queue Sync button
+        self.btn_netlify = QPushButton("🌐 NETLIFY SYNC")
+        self.btn_netlify.setStyleSheet(
+            f"background-color: #1f1d36; color: #c77dff; border: 1px solid #7b2cbf; font-weight: bold;"
+        )
+        self.btn_netlify.setToolTip("Open Netlify Web Queue to view guest requests and remove songs")
+        self.btn_netlify.clicked.connect(self._on_open_netlify_sync)
+        input_row.addWidget(self.btn_netlify)
+
         ingest_layout.addLayout(input_row)
 
         # Bottom row: Progress bar and status label
@@ -356,3 +365,10 @@ class QueueWidget(QWidget):
             elif item.status == QueueStatus.PLAYED:
                 status_item.setForeground(QColor("#586069"))
             self.table.setItem(idx, 7, status_item)
+
+    def _on_open_netlify_sync(self):
+        """Open Netlify Web Queue sync dialog to preview submissions, remove songs, and load to decks."""
+        from app.gui.netlify_sync_dialog import NetlifySyncDialog
+        dialog = NetlifySyncDialog(self, parent=self)
+        dialog.exec()
+

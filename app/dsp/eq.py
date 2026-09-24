@@ -145,6 +145,15 @@ class ThreeBandEQ:
         self._filter_val = float(np.clip(val, -1.0, 1.0))
         self._update_sweep()
 
+    @property
+    def filter_val(self) -> float:
+        return self._filter_val
+
+    @filter_val.setter
+    def filter_val(self, val: float):
+        self.filter_knob = val
+
+
     def _update_sweep(self):
         val = self._filter_val
         if abs(val) < 0.02:

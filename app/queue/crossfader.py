@@ -4,6 +4,7 @@ Supports Equal-Power (Log/Cos), Linear, and Cut crossfade curves,
 plus automated track transition triggering when remaining playback time reaches threshold.
 """
 import time
+from typing import Optional
 import numpy as np
 from app.config import (
     CrossfadeCurve,
@@ -78,14 +79,16 @@ class Crossfader:
 
         return gain_A, gain_B
 
-    def start_auto_transition(self, target_deck: str):
+    def start_auto_transition(self, target_deck: str, duration: Optional[float] = None):
         """
         Initiate smooth automated crossfade toward target_deck ('A' or 'B').
+        Optionally override duration with musical/beat-synced duration.
         """
         self._transition_start_time = time.time()
         self._transition_start_pos = self._position
         self._transition_target_pos = -1.0 if target_deck == "A" else 1.0
         self._transition_elapsed_sec = 0.0
+        self._transition_active_duration = float(duration) if (duration is not None and duration > 0.05) else self.crossfade_duration
         self._is_transitioning = True
 
     def update_auto_transition(self, frames: int = 0, sample_rate: int = 44100) -> bool:
@@ -104,7 +107,8 @@ class Crossfader:
         else:
             elapsed = time.time() - self._transition_start_time
 
-        progress = elapsed / max(0.1, self.crossfade_duration)
+        active_dur = getattr(self, "_transition_active_duration", self.crossfade_duration)
+        progress = elapsed / max(0.1, active_dur)
 
         if progress >= 1.0:
             self._position = self._transition_target_pos

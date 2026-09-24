@@ -144,10 +144,87 @@ class DualDeckAudioEngine:
         nominal_buffer_ms = (frames / float(self.sample_rate)) * 1000.0
         self.dsp_cpu_percent = min(100.0, (dur_ms / max(0.1, nominal_buffer_ms)) * 100.0)
 
+    def _trigger_beat_synced_transition(
+        self,
+        outgoing: Deck,
+        incoming: Deck,
+        outgoing_name: str,
+        incoming_name: str,
+        xfade_sec: float,
+    ) -> bool:
+        """
+        Check if outgoing deck is on a beat boundary, sync tempos, align beat phase,
+        and trigger automated crossfade transition with beat-quantized duration.
+        Returns True if transition was triggered.
+        """
+        rem = outgoing.remaining_seconds
+        if rem <= 0.1 or rem > xfade_sec:
+            return False
+
+        # Preload incoming deck if empty
+        if incoming.track is None:
+            next_track = self.queue.get_next_for_deck(incoming_name)
+            if next_track is not None:
+                incoming.load_track(next_track)
+
+        if incoming.track is None:
+            return False
+
+        # Calculate musical beat parameters
+        bpm = outgoing.current_bpm
+        spb = 60.0 / max(30.0, bpm)
+        elapsed = outgoing.elapsed_seconds
+        phase = elapsed % spb
+        time_to_beat = (spb - phase) % spb
+
+        # Beat snap window (within 80ms of beat) or force trigger if running out of audio
+        on_beat = (time_to_beat <= 0.08) or (phase <= 0.08)
+        force_trigger = (rem <= 0.5) or (rem <= xfade_sec - (spb * 2.0))
+
+        if not (on_beat or force_trigger):
+            return False  # Wait for upcoming beat boundary so beats drop together
+
+        # 1. Beatmatch: sync incoming deck tempo to outgoing deck
+        incoming.sync_to_bpm(outgoing.current_bpm)
+
+        # 2. Phase alignment: ensure incoming beat lands synchronously with outgoing beat
+        if incoming.state == PlaybackState.PLAYING:
+            inc_spb = 60.0 / max(30.0, incoming.current_bpm)
+            inc_phase = incoming.elapsed_seconds % inc_spb
+            out_phase = outgoing.elapsed_seconds % spb
+            phase_diff = (out_phase - inc_phase) % inc_spb
+            if phase_diff > inc_spb / 2.0:
+                phase_diff -= inc_spb
+            with incoming.lock:
+                new_pos = incoming.playhead_pos + phase_diff * self.sample_rate
+                incoming.playhead_pos = float(np.clip(new_pos, 0, incoming.track.total_samples))
+        else:
+            with incoming.lock:
+                incoming.playhead_pos = incoming.cue_point
+
+        # 3. Start incoming playback
+        incoming.play()
+        self.queue.mark_playing(incoming.track.metadata.id)
+        self._auto_dj_active_outgoing = outgoing_name
+        self._auto_dj_active_incoming = incoming_name
+
+        # 4. Musical phrase quantization: snap transition duration to nearest 4-beat bars
+        bar_sec = 4.0 * spb
+        num_bars = max(1, round(xfade_sec / bar_sec))
+        beat_duration = num_bars * bar_sec
+
+        self.crossfader.start_auto_transition(target_deck=incoming_name, duration=beat_duration)
+        logger.info(
+            f"Beat-synced Auto-DJ transition started: Deck {outgoing_name} -> Deck {incoming_name} "
+            f"({bpm:.1f} BPM, {num_bars} bars / {beat_duration:.2f}s)"
+        )
+        return True
+
     def check_auto_dj(self):
         """
-        Auto-DJ logic loop called periodically (e.g. at 10-20 Hz from GUI timer).
-        Detects when 5-10 seconds remain on playing deck and initiates automated transition.
+        Auto-DJ logic loop called periodically (e.g. at 20-40 Hz from GUI timer).
+        Detects when remaining playback time reaches threshold, waits for next beat boundary,
+        synchronizes tempos and beat phases so beats start together, and executes automated transition.
         Preloads next tracks from smart queue when transitions complete.
         """
         if not self.crossfader.auto_dj_enabled:
@@ -161,21 +238,13 @@ class DualDeckAudioEngine:
             and self.crossfader.position < 0.2
             and not self.crossfader.is_transitioning
         ):
-            rem_a = self.deck_a.remaining_seconds
-            # Trigger transition when remaining time <= crossfade duration
-            if 0.1 < rem_a <= xfade_sec:
-                # Check if Deck B is loaded; if not, pull from smart queue
-                if self.deck_b.track is None:
-                    next_track = self.queue.get_next_for_deck("B")
-                    if next_track is not None:
-                        self.deck_b.load_track(next_track)
-
-                if self.deck_b.track is not None:
-                    self.deck_b.play()
-                    self.queue.mark_playing(self.deck_b.track.metadata.id)
-                    self._auto_dj_active_outgoing = "A"
-                    self._auto_dj_active_incoming = "B"
-                    self.crossfader.start_auto_transition(target_deck="B")
+            self._trigger_beat_synced_transition(
+                outgoing=self.deck_a,
+                incoming=self.deck_b,
+                outgoing_name="A",
+                incoming_name="B",
+                xfade_sec=xfade_sec,
+            )
 
         # Case 2: Deck B is playing toward Deck A
         elif (
@@ -183,19 +252,14 @@ class DualDeckAudioEngine:
             and self.crossfader.position > -0.2
             and not self.crossfader.is_transitioning
         ):
-            rem_b = self.deck_b.remaining_seconds
-            if 0.1 < rem_b <= xfade_sec:
-                if self.deck_a.track is None:
-                    next_track = self.queue.get_next_for_deck("A")
-                    if next_track is not None:
-                        self.deck_a.load_track(next_track)
+            self._trigger_beat_synced_transition(
+                outgoing=self.deck_b,
+                incoming=self.deck_a,
+                outgoing_name="B",
+                incoming_name="A",
+                xfade_sec=xfade_sec,
+            )
 
-                if self.deck_a.track is not None:
-                    self.deck_a.play()
-                    self.queue.mark_playing(self.deck_a.track.metadata.id)
-                    self._auto_dj_active_outgoing = "B"
-                    self._auto_dj_active_incoming = "A"
-                    self.crossfader.start_auto_transition(target_deck="A")
 
         # Check if an auto-transition just finished
         if not self.crossfader.is_transitioning and self._auto_dj_active_outgoing is not None:
